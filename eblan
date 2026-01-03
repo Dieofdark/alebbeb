@@ -329,6 +329,22 @@ end)
 
 -- Dragging for mobile
 local dragging, dragStart, startPos = false, nil, nil
+local miniDragging, miniDragStart, miniStartPos = false, nil, nil
+
+miniBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        miniDragging = true
+        miniDragStart = input.Position
+        miniStartPos = miniBtn.Position
+    end
+end)
+
+miniBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        miniDragging = false
+    end
+end)
+
 titleLabel.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
@@ -342,11 +358,16 @@ UserInputService.InputChanged:Connect(function(input)
         local delta = input.Position - dragStart
         mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
+    if miniDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - miniDragStart
+        miniBtn.Position = UDim2.new(miniStartPos.X.Scale, miniStartPos.X.Offset + delta.X, miniStartPos.Y.Scale, miniStartPos.Y.Offset + delta.Y)
+    end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = false
+        miniDragging = false
     end
 end)
 
