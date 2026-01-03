@@ -1,0 +1,633 @@
+--[[
+    ESP FOR RATMIR
+    Mobile Optimized Edition
+    by Fethium Team
+]]--
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Settings
+local Settings = {
+    Enabled = true,
+    ESPType = "2D Box", -- "2D Box", "3D Box", "Chams", "Soul"
+    Color = Color3.fromRGB(138, 43, 226),
+    Rainbow = false,
+    ShowNames = true,
+    ShowHealth = true,
+    HealthStyle = "Percent", -- "Percent", "Numbers"
+    ShowDistance = true
+}
+
+-- Color presets (20 + Rainbow)
+local ColorPresets = {
+    {name = "Purple", color = Color3.fromRGB(138, 43, 226)},
+    {name = "Red", color = Color3.fromRGB(255, 50, 50)},
+    {name = "Green", color = Color3.fromRGB(50, 255, 50)},
+    {name = "Blue", color = Color3.fromRGB(50, 150, 255)},
+    {name = "Cyan", color = Color3.fromRGB(0, 255, 255)},
+    {name = "Yellow", color = Color3.fromRGB(255, 255, 0)},
+    {name = "Orange", color = Color3.fromRGB(255, 150, 0)},
+    {name = "Pink", color = Color3.fromRGB(255, 100, 200)},
+    {name = "Magenta", color = Color3.fromRGB(255, 0, 255)},
+    {name = "Lime", color = Color3.fromRGB(150, 255, 0)},
+    {name = "Teal", color = Color3.fromRGB(0, 200, 200)},
+    {name = "Gold", color = Color3.fromRGB(255, 200, 50)},
+    {name = "Silver", color = Color3.fromRGB(200, 200, 200)},
+    {name = "White", color = Color3.fromRGB(255, 255, 255)},
+    {name = "Coral", color = Color3.fromRGB(255, 127, 80)},
+    {name = "Violet", color = Color3.fromRGB(200, 100, 255)},
+    {name = "Sky", color = Color3.fromRGB(135, 206, 235)},
+    {name = "Mint", color = Color3.fromRGB(150, 255, 200)},
+    {name = "Peach", color = Color3.fromRGB(255, 200, 180)},
+    {name = "Navy", color = Color3.fromRGB(50, 50, 150)},
+}
+local colorIdx = 1
+
+-- ESP Storage
+local ESPObjects = {}
+local SoulObjects = {}
+
+-- Rainbow hue
+local rainbowHue = 0
+
+-- Create main GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RatmirESP"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
+if not screenGui.Parent then screenGui.Parent = player:WaitForChild("PlayerGui") end
+
+-- Main container
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Main"
+mainFrame.Size = UDim2.new(0, 280, 0, 420)
+mainFrame.Position = UDim2.new(0.5, -140, 0.5, -210)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 16)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(138, 43, 226)
+mainStroke.Thickness = 2
+mainStroke.Parent = mainFrame
+
+-- Title with rainbow effect
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Name = "Title"
+titleLabel.Text = "Для Ратмира"
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextSize = 22
+titleLabel.TextColor3 = Color3.fromRGB(255, 100, 150)
+titleLabel.Size = UDim2.new(1, 0, 0, 50)
+titleLabel.Position = UDim2.new(0, 0, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Parent = mainFrame
+
+-- Minimize button
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Name = "Minimize"
+minimizeBtn.Text = "—"
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 20
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeBtn.Size = UDim2.new(0, 40, 0, 40)
+minimizeBtn.Position = UDim2.new(1, -45, 0, 5)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+minimizeBtn.Parent = mainFrame
+Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(0, 10)
+
+-- Content frame
+local contentFrame = Instance.new("Frame")
+contentFrame.Name = "Content"
+contentFrame.Size = UDim2.new(1, -20, 1, -60)
+contentFrame.Position = UDim2.new(0, 10, 0, 55)
+contentFrame.BackgroundTransparency = 1
+contentFrame.Parent = mainFrame
+
+-- Scroll frame for mobile
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name = "Scroll"
+scrollFrame.Size = UDim2.new(1, 0, 1, 0)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 500)
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.Parent = contentFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0, 8)
+listLayout.Parent = scrollFrame
+
+-- Helper: Create toggle button
+local function createToggle(name, default, callback, order)
+    local frame = Instance.new("Frame")
+    frame.Name = name
+    frame.Size = UDim2.new(1, -10, 0, 45)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    frame.LayoutOrder = order
+    frame.Parent = scrollFrame
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+    
+    local label = Instance.new("TextLabel")
+    label.Text = name
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local btn = Instance.new("TextButton")
+    btn.Text = default and "ON" or "OFF"
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 13
+    btn.TextColor3 = default and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 80, 80)
+    btn.Size = UDim2.new(0, 60, 0, 30)
+    btn.Position = UDim2.new(1, -70, 0.5, -15)
+    btn.BackgroundColor3 = default and Color3.fromRGB(30, 60, 30) or Color3.fromRGB(60, 30, 30)
+    btn.Parent = frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    
+    local state = default
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = state and "ON" or "OFF"
+        btn.TextColor3 = state and Color3.fromRGB(80, 255, 80) or Color3.fromRGB(255, 80, 80)
+        btn.BackgroundColor3 = state and Color3.fromRGB(30, 60, 30) or Color3.fromRGB(60, 30, 30)
+        callback(state)
+    end)
+    
+    return frame, btn
+end
+
+-- Helper: Create selector button
+local function createSelector(name, options, default, callback, order)
+    local frame = Instance.new("Frame")
+    frame.Name = name
+    frame.Size = UDim2.new(1, -10, 0, 45)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    frame.LayoutOrder = order
+    frame.Parent = scrollFrame
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+    
+    local label = Instance.new("TextLabel")
+    label.Text = name
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(220, 220, 220)
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local idx = 1
+    for i, v in ipairs(options) do if v == default then idx = i break end end
+    
+    local btn = Instance.new("TextButton")
+    btn.Text = "< " .. default .. " >"
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Size = UDim2.new(0, 110, 0, 30)
+    btn.Position = UDim2.new(1, -120, 0.5, -15)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    btn.Parent = frame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    
+    btn.MouseButton1Click:Connect(function()
+        idx = idx % #options + 1
+        btn.Text = "< " .. options[idx] .. " >"
+        callback(options[idx])
+    end)
+    
+    return frame, btn
+end
+
+-- Create UI elements
+createToggle("ESP Enabled", true, function(v) Settings.Enabled = v end, 1)
+
+createSelector("ESP Type", {"2D Box", "3D Box", "Chams", "Soul", "Highlight"}, "Highlight", function(v) 
+    Settings.ESPType = v 
+    -- Clear old visuals when type changes
+    for plr, esp in pairs(ESPObjects) do
+        if esp.highlight then esp.highlight.Enabled = false end
+        if plr.Character then
+            local box = plr.Character:FindFirstChild("RatmirBox")
+            local box3d = plr.Character:FindFirstChild("Ratmir3DBox")
+            if box then box:Destroy() end
+            if box3d then box3d:Destroy() end
+        end
+    end
+end, 2)
+
+-- Color selector
+local colorFrame = Instance.new("Frame")
+colorFrame.Name = "ColorSelect"
+colorFrame.Size = UDim2.new(1, -10, 0, 45)
+colorFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+colorFrame.LayoutOrder = 3
+colorFrame.Parent = scrollFrame
+Instance.new("UICorner", colorFrame).CornerRadius = UDim.new(0, 10)
+
+local colorLabel = Instance.new("TextLabel")
+colorLabel.Text = "Color"
+colorLabel.Font = Enum.Font.Gotham
+colorLabel.TextSize = 14
+colorLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+colorLabel.Size = UDim2.new(0.3, 0, 1, 0)
+colorLabel.Position = UDim2.new(0, 12, 0, 0)
+colorLabel.BackgroundTransparency = 1
+colorLabel.TextXAlignment = Enum.TextXAlignment.Left
+colorLabel.Parent = colorFrame
+
+local colorPreview = Instance.new("Frame")
+colorPreview.Size = UDim2.new(0, 25, 0, 25)
+colorPreview.Position = UDim2.new(0, 70, 0.5, -12)
+colorPreview.BackgroundColor3 = Settings.Color
+colorPreview.Parent = colorFrame
+Instance.new("UICorner", colorPreview).CornerRadius = UDim.new(0, 6)
+
+local colorBtn = Instance.new("TextButton")
+colorBtn.Text = "< Purple >"
+colorBtn.Font = Enum.Font.Gotham
+colorBtn.TextSize = 11
+colorBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+colorBtn.Size = UDim2.new(0, 100, 0, 30)
+colorBtn.Position = UDim2.new(1, -110, 0.5, -15)
+colorBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+colorBtn.Parent = colorFrame
+Instance.new("UICorner", colorBtn).CornerRadius = UDim.new(0, 8)
+
+colorBtn.MouseButton1Click:Connect(function()
+    colorIdx = colorIdx % (#ColorPresets + 1) + 1
+    if colorIdx > #ColorPresets then
+        Settings.Rainbow = true
+        colorBtn.Text = "< Rainbow >"
+        colorPreview.BackgroundColor3 = Color3.fromHSV(rainbowHue, 1, 1)
+    else
+        Settings.Rainbow = false
+        Settings.Color = ColorPresets[colorIdx].color
+        colorBtn.Text = "< " .. ColorPresets[colorIdx].name .. " >"
+        colorPreview.BackgroundColor3 = Settings.Color
+    end
+end)
+
+createToggle("Show Names", true, function(v) Settings.ShowNames = v end, 4)
+createToggle("Show Health", true, function(v) Settings.ShowHealth = v end, 5)
+createSelector("Health Style", {"Percent", "Numbers"}, "Percent", function(v) Settings.HealthStyle = v end, 6)
+createToggle("Show Distance", true, function(v) Settings.ShowDistance = v end, 7)
+
+-- Update canvas size
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
+end)
+
+-- Minimized button
+local miniBtn = Instance.new("TextButton")
+miniBtn.Name = "MiniBtn"
+miniBtn.Text = "ESP"
+miniBtn.Font = Enum.Font.GothamBold
+miniBtn.TextSize = 14
+miniBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+miniBtn.Size = UDim2.new(0, 60, 0, 40)
+miniBtn.Position = UDim2.new(0, 10, 0, 10)
+miniBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+miniBtn.Visible = false
+miniBtn.Parent = screenGui
+Instance.new("UICorner", miniBtn).CornerRadius = UDim.new(0, 10)
+local miniStroke = Instance.new("UIStroke", miniBtn)
+miniStroke.Color = Color3.fromRGB(138, 43, 226)
+
+-- Minimize/Restore
+local isMinimized = false
+minimizeBtn.MouseButton1Click:Connect(function()
+    isMinimized = true
+    mainFrame.Visible = false
+    miniBtn.Visible = true
+end)
+
+miniBtn.MouseButton1Click:Connect(function()
+    isMinimized = false
+    mainFrame.Visible = true
+    miniBtn.Visible = false
+end)
+
+-- Dragging for mobile
+local dragging, dragStart, startPos = false, nil, nil
+titleLabel.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+-- ESP Functions
+local function createESP(plr)
+    if plr == player then return end
+    if ESPObjects[plr] then return end
+    
+    local esp = {
+        billboardGui = nil,
+        nameLabel = nil,
+        healthLabel = nil,
+        distLabel = nil,
+        highlight = nil,
+        souls = {}
+    }
+    
+    -- BillboardGui for info
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "ESP_" .. plr.Name
+    bb.Size = UDim2.new(0, 150, 0, 60)
+    bb.StudsOffset = Vector3.new(0, 3, 0)
+    bb.AlwaysOnTop = true
+    bb.LightInfluence = 0
+    esp.billboardGui = bb
+    
+    local infoFrame = Instance.new("Frame", bb)
+    infoFrame.Size = UDim2.new(1, 0, 1, 0)
+    infoFrame.BackgroundTransparency = 1
+    
+    local nameLabel = Instance.new("TextLabel", infoFrame)
+    nameLabel.Size = UDim2.new(1, 0, 0, 18)
+    nameLabel.Position = UDim2.new(0, 0, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextSize = 14
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.TextStrokeTransparency = 0.5
+    nameLabel.Text = plr.Name
+    esp.nameLabel = nameLabel
+    
+    local healthLabel = Instance.new("TextLabel", infoFrame)
+    healthLabel.Size = UDim2.new(1, 0, 0, 16)
+    healthLabel.Position = UDim2.new(0, 0, 0, 18)
+    healthLabel.BackgroundTransparency = 1
+    healthLabel.Font = Enum.Font.Gotham
+    healthLabel.TextSize = 12
+    healthLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    healthLabel.TextStrokeTransparency = 0.5
+    healthLabel.Text = "100%"
+    esp.healthLabel = healthLabel
+    
+    local distLabel = Instance.new("TextLabel", infoFrame)
+    distLabel.Size = UDim2.new(1, 0, 0, 14)
+    distLabel.Position = UDim2.new(0, 0, 0, 34)
+    distLabel.BackgroundTransparency = 1
+    distLabel.Font = Enum.Font.Gotham
+    distLabel.TextSize = 11
+    distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    distLabel.TextStrokeTransparency = 0.5
+    distLabel.Text = "0m"
+    esp.distLabel = distLabel
+    
+    -- Highlight for Chams/Highlight
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Settings.Color
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineTransparency = 0
+    highlight.Enabled = false
+    esp.highlight = highlight
+    
+    ESPObjects[plr] = esp
+end
+
+local function removeESP(plr)
+    local esp = ESPObjects[plr]
+    if esp then
+        if esp.billboardGui then esp.billboardGui:Destroy() end
+        if esp.highlight then esp.highlight:Destroy() end
+        for _, soul in pairs(esp.souls) do if soul then soul:Destroy() end end
+        ESPObjects[plr] = nil
+    end
+    -- Clean up character visuals
+    if plr.Character then
+        local box = plr.Character:FindFirstChild("RatmirBox")
+        local box3d = plr.Character:FindFirstChild("Ratmir3DBox")
+        if box then box:Destroy() end
+        if box3d then box3d:Destroy() end
+    end
+end
+
+local function updateESP()
+    local currentColor = Settings.Rainbow and Color3.fromHSV(rainbowHue, 1, 1) or Settings.Color
+    
+    for plr, esp in pairs(ESPObjects) do
+        local char = plr.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local head = char and char:FindFirstChild("Head")
+        
+        if not Settings.Enabled or not char or not hrp or not hum or hum.Health <= 0 then
+            if esp.billboardGui then esp.billboardGui.Enabled = false end
+            if esp.highlight then esp.highlight.Enabled = false end
+            for _, soul in pairs(esp.souls) do if soul then soul.Enabled = false end end
+            local box = char and char:FindFirstChild("RatmirBox")
+            local box3d = char and char:FindFirstChild("Ratmir3DBox")
+            if box then box:Destroy() end
+            if box3d then box3d:Destroy() end
+        else
+        
+        -- Attach billboard
+        if esp.billboardGui.Parent ~= head then
+            esp.billboardGui.Parent = head
+        end
+        esp.billboardGui.Enabled = true
+        
+        -- Update name
+        esp.nameLabel.Visible = Settings.ShowNames
+        esp.nameLabel.TextColor3 = currentColor
+        
+        -- Update health
+        esp.healthLabel.Visible = Settings.ShowHealth
+        local hp = hum.Health
+        local maxHp = hum.MaxHealth
+        if Settings.HealthStyle == "Percent" then
+            esp.healthLabel.Text = math.floor(hp / maxHp * 100) .. "%"
+        else
+            esp.healthLabel.Text = math.floor(hp) .. " / " .. math.floor(maxHp)
+        end
+        local hpRatio = hp / maxHp
+        esp.healthLabel.TextColor3 = Color3.fromRGB(255 * (1 - hpRatio), 255 * hpRatio, 50)
+        
+        -- Update distance
+        esp.distLabel.Visible = Settings.ShowDistance
+        local myHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if myHRP then
+            local dist = (hrp.Position - myHRP.Position).Magnitude
+            esp.distLabel.Text = math.floor(dist) .. "m"
+        end
+        
+        -- Clear old visuals
+        esp.highlight.Enabled = false
+        for _, soul in pairs(esp.souls) do if soul then soul.Enabled = false end end
+        local oldBox = char:FindFirstChild("RatmirBox")
+        local old3DBox = char:FindFirstChild("Ratmir3DBox")
+        if oldBox then oldBox:Destroy() end
+        if old3DBox then old3DBox:Destroy() end
+        
+        local espType = Settings.ESPType
+        
+        -- 2D Box (BillboardGui method)
+        if espType == "2D Box" then
+            local box = Instance.new("BillboardGui")
+            box.Name = "RatmirBox"
+            box.Adornee = hrp
+            box.Size = UDim2.new(4, 0, 5, 0)
+            box.AlwaysOnTop = true
+            box.Parent = char
+            local frame = Instance.new("Frame", box)
+            frame.Size = UDim2.new(1, 0, 1, 0)
+            frame.BackgroundTransparency = 1
+            local stroke = Instance.new("UIStroke", frame)
+            stroke.Color = currentColor
+            stroke.Thickness = 2
+        
+        -- 3D Box (BoxHandleAdornment method)
+        elseif espType == "3D Box" then
+            local folder = Instance.new("Folder")
+            folder.Name = "Ratmir3DBox"
+            folder.Parent = char
+            local size = Vector3.new(4, 5, 2)
+            local edges = {
+                {Vector3.new(-1,-1,-1), Vector3.new(1,-1,-1)},
+                {Vector3.new(-1,-1,-1), Vector3.new(-1,1,-1)},
+                {Vector3.new(-1,-1,-1), Vector3.new(-1,-1,1)},
+                {Vector3.new(1,-1,-1), Vector3.new(1,1,-1)},
+                {Vector3.new(1,-1,-1), Vector3.new(1,-1,1)},
+                {Vector3.new(-1,1,-1), Vector3.new(1,1,-1)},
+                {Vector3.new(-1,1,-1), Vector3.new(-1,1,1)},
+                {Vector3.new(1,1,-1), Vector3.new(1,1,1)},
+                {Vector3.new(-1,-1,1), Vector3.new(1,-1,1)},
+                {Vector3.new(-1,-1,1), Vector3.new(-1,1,1)},
+                {Vector3.new(1,-1,1), Vector3.new(1,1,1)},
+                {Vector3.new(-1,1,1), Vector3.new(1,1,1)}
+            }
+            for _, e in pairs(edges) do
+                local beam = Instance.new("BoxHandleAdornment")
+                beam.Name = "Edge"
+                beam.Adornee = hrp
+                beam.Size = Vector3.new(0.1, 0.1, (e[2] - e[1]).Magnitude * size.Z / 2)
+                beam.CFrame = CFrame.new((e[1] * size/2 + e[2] * size/2) / 2, e[2] * size/2)
+                beam.Color3 = currentColor
+                beam.Transparency = 0.3
+                beam.AlwaysOnTop = true
+                beam.ZIndex = 5
+                beam.Parent = folder
+            end
+        
+        -- Highlight/Chams
+        elseif espType == "Chams" or espType == "Highlight" then
+            if esp.highlight.Parent ~= char then esp.highlight.Parent = char end
+            esp.highlight.Enabled = true
+            esp.highlight.FillColor = currentColor
+            esp.highlight.FillTransparency = espType == "Chams" and 0.3 or 0.7
+        
+        -- Soul effect
+        elseif espType == "Soul" then
+            if #esp.souls == 0 then
+                for i = 1, 3 do
+                    local soul = Instance.new("BillboardGui")
+                    soul.Size = UDim2.new(0, 20, 0, 20)
+                    soul.AlwaysOnTop = true
+                    soul.LightInfluence = 0
+                    local soulImg = Instance.new("Frame", soul)
+                    soulImg.Size = UDim2.new(1, 0, 1, 0)
+                    soulImg.BackgroundColor3 = currentColor
+                    soulImg.BackgroundTransparency = 0.3
+                    Instance.new("UICorner", soulImg).CornerRadius = UDim.new(1, 0)
+                    table.insert(esp.souls, soul)
+                end
+            end
+            local t = tick()
+            for i, soul in ipairs(esp.souls) do
+                if soul.Parent ~= hrp then soul.Parent = hrp end
+                soul.Enabled = true
+                local angle = t * 2 + (i - 1) * (math.pi * 2 / 3)
+                local radius = 2.5
+                local yOffset = math.sin(t * 3 + i) * 0.5
+                soul.StudsOffset = Vector3.new(math.cos(angle) * radius, yOffset + 1, math.sin(angle) * radius)
+                soul:FindFirstChildOfClass("Frame").BackgroundColor3 = currentColor
+            end
+        end
+        end
+    end
+end
+
+-- Player management
+for _, plr in pairs(Players:GetPlayers()) do
+    createESP(plr)
+end
+
+Players.PlayerAdded:Connect(function(plr)
+    wait(1)
+    createESP(plr)
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+    removeESP(plr)
+end)
+
+-- Character respawn handling
+for _, plr in pairs(Players:GetPlayers()) do
+    if plr ~= player then
+        plr.CharacterAdded:Connect(function()
+            wait(0.5)
+            if ESPObjects[plr] then
+                ESPObjects[plr].billboardGui.Parent = nil
+                ESPObjects[plr].highlight.Parent = nil
+            end
+        end)
+    end
+end
+
+local updateCounter = 0
+RunService.Heartbeat:Connect(function(dt)
+    -- Rainbow title animation
+    rainbowHue = (rainbowHue + dt * 0.3) % 1
+    titleLabel.TextColor3 = Color3.fromHSV(rainbowHue, 0.8, 1)
+    mainStroke.Color = Color3.fromHSV(rainbowHue, 0.7, 0.9)
+    miniStroke.Color = Color3.fromHSV(rainbowHue, 0.7, 0.9)
+    
+    -- Update color preview if rainbow
+    if Settings.Rainbow then
+        colorPreview.BackgroundColor3 = Color3.fromHSV(rainbowHue, 1, 1)
+    end
+    
+    -- Update ESP (throttled for performance)
+    updateCounter = updateCounter + 1
+    if updateCounter >= 3 then
+        updateCounter = 0
+        updateESP()
+    end
+end)
