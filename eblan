@@ -1,9 +1,3 @@
---[[
-    ESP FOR RATMIR
-    Mobile Optimized Edition
-    by Fethium Team
-]]--
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -11,16 +5,17 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Settings
 local Settings = {
     Enabled = true,
-    ESPType = "2D Box", -- "2D Box", "3D Box", "Chams", "Soul"
+    ESPType = "Highlight",
     Color = Color3.fromRGB(138, 43, 226),
     Rainbow = false,
     ShowNames = true,
     ShowHealth = true,
-    HealthStyle = "Percent", -- "Percent", "Numbers"
-    ShowDistance = true
+    HealthStyle = "Percent",
+    ShowDistance = true,
+    TrailEnabled = false,
+    TrailType = "Classic"
 }
 
 -- Color presets (20 + Rainbow)
@@ -48,16 +43,15 @@ local ColorPresets = {
 }
 local colorIdx = 1
 
--- ESP Storage
 local ESPObjects = {}
-local SoulObjects = {}
+local myTrail = nil
 
 -- Rainbow hue
 local rainbowHue = 0
 
 -- Create main GUI
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "RatmirESP"
+screenGui.Name = "VisualClient"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
@@ -84,7 +78,7 @@ mainStroke.Parent = mainFrame
 -- Title with rainbow effect
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Name = "Title"
-titleLabel.Text = "Для Ратмира"
+titleLabel.Text = "Visual Client"
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 22
 titleLabel.TextColor3 = Color3.fromRGB(255, 100, 150)
@@ -220,7 +214,7 @@ end
 -- Create UI elements
 createToggle("ESP Enabled", true, function(v) Settings.Enabled = v end, 1)
 
-createSelector("ESP Type", {"2D Box", "3D Box", "Chams", "Soul", "Highlight"}, "Highlight", function(v) 
+createSelector("ESP Type", {"2D Box", "3D Box", "Chams", "Soul", "Soul V2", "Stars", "Highlight"}, "Highlight", function(v) 
     Settings.ESPType = v 
     -- Clear old visuals when type changes
     for plr, esp in pairs(ESPObjects) do
@@ -244,7 +238,7 @@ colorFrame.Parent = scrollFrame
 Instance.new("UICorner", colorFrame).CornerRadius = UDim.new(0, 10)
 
 local colorLabel = Instance.new("TextLabel")
-colorLabel.Text = "Color"
+colorLabel.Text = "Visuals"
 colorLabel.Font = Enum.Font.Gotham
 colorLabel.TextSize = 14
 colorLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
@@ -290,6 +284,16 @@ createToggle("Show Names", true, function(v) Settings.ShowNames = v end, 4)
 createToggle("Show Health", true, function(v) Settings.ShowHealth = v end, 5)
 createSelector("Health Style", {"Percent", "Numbers"}, "Percent", function(v) Settings.HealthStyle = v end, 6)
 createToggle("Show Distance", true, function(v) Settings.ShowDistance = v end, 7)
+
+createToggle("Trail", false, function(v) 
+    Settings.TrailEnabled = v
+    if not v and myTrail then myTrail:Destroy() myTrail = nil end
+end, 8)
+
+createSelector("Trail Type", {"Ghost", "Classic", "Stars", "Lightning", "Hearts", "Sparkle"}, "Ghost", function(v) 
+    Settings.TrailType = v
+    if myTrail then myTrail:Destroy() myTrail = nil end
+end, 9)
 
 -- Update canvas size
 scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
@@ -600,6 +604,63 @@ local function updateESP()
                 soul.StudsOffset = Vector3.new(math.cos(angle) * radius, yOffset + 1, math.sin(angle) * radius)
                 soul:FindFirstChildOfClass("Frame").BackgroundColor3 = currentColor
             end
+        
+        elseif espType == "Soul V2" then
+            if #esp.souls ~= 4 then
+                for _, s in pairs(esp.souls) do s:Destroy() end
+                esp.souls = {}
+                for i = 1, 4 do
+                    local soul = Instance.new("BillboardGui")
+                    soul.Size = UDim2.new(0, 15, 0, 15)
+                    soul.AlwaysOnTop = true
+                    local soulImg = Instance.new("Frame", soul)
+                    soulImg.Size = UDim2.new(1, 0, 1, 0)
+                    soulImg.BackgroundColor3 = currentColor
+                    soulImg.BackgroundTransparency = 0.2
+                    Instance.new("UICorner", soulImg).CornerRadius = UDim.new(1, 0)
+                    table.insert(esp.souls, soul)
+                end
+            end
+            local t = tick()
+            for i, soul in ipairs(esp.souls) do
+                if soul.Parent ~= hrp then soul.Parent = hrp end
+                soul.Enabled = true
+                local angle = t * 1.5 + (i - 1) * (math.pi / 2)
+                local yAngle = t * 2 + i
+                local radius = 1.8
+                local yPos = math.sin(yAngle) * 2
+                soul.StudsOffset = Vector3.new(math.cos(angle) * radius, yPos, math.sin(angle) * radius)
+                soul:FindFirstChildOfClass("Frame").BackgroundColor3 = currentColor
+            end
+        
+        elseif espType == "Stars" then
+            if #esp.souls ~= 5 then
+                for _, s in pairs(esp.souls) do s:Destroy() end
+                esp.souls = {}
+                for i = 1, 5 do
+                    local star = Instance.new("BillboardGui")
+                    star.Size = UDim2.new(0, 18, 0, 18)
+                    star.AlwaysOnTop = true
+                    local starLabel = Instance.new("TextLabel", star)
+                    starLabel.Size = UDim2.new(1, 0, 1, 0)
+                    starLabel.BackgroundTransparency = 1
+                    starLabel.Text = "*"
+                    starLabel.TextColor3 = currentColor
+                    starLabel.TextSize = 22
+                    starLabel.Font = Enum.Font.GothamBold
+                    table.insert(esp.souls, star)
+                end
+            end
+            local t = tick()
+            for i, star in ipairs(esp.souls) do
+                if star.Parent ~= hrp then star.Parent = hrp end
+                star.Enabled = true
+                local angle = t * 1.2 + (i - 1) * (math.pi * 2 / 5)
+                local radius = 2 + math.sin(t * 2 + i) * 0.5
+                local yPos = math.sin(t * 3 + i * 0.7) * 1.5
+                star.StudsOffset = Vector3.new(math.cos(angle) * radius, yPos + 0.5, math.sin(angle) * radius)
+                star:FindFirstChildOfClass("TextLabel").TextColor3 = currentColor
+            end
         end
         end
     end
@@ -633,6 +694,90 @@ for _, plr in pairs(Players:GetPlayers()) do
 end
 
 local updateCounter = 0
+
+local function updateTrail()
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local torso = char and (char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"))
+    if not Settings.TrailEnabled or not hrp or not torso then return end
+    local currentColor = Settings.Rainbow and Color3.fromHSV(rainbowHue, 1, 1) or Settings.Color
+    if not myTrail or not myTrail.Parent then
+        myTrail = Instance.new("Folder")
+        myTrail.Name = "VisualTrail"
+        myTrail.Parent = char
+    end
+    local trailType = Settings.TrailType
+    local backPos = torso.CFrame * CFrame.new(0, 0, 1)
+    
+    if trailType == "Ghost" then
+        local ghost = Instance.new("BillboardGui")
+        ghost.Size = UDim2.new(0, 60, 0, 60)
+        ghost.AlwaysOnTop = false
+        ghost.StudsOffsetWorldSpace = backPos.Position
+        ghost.Parent = myTrail
+        local frame = Instance.new("Frame", ghost)
+        frame.Size = UDim2.new(1, 0, 1, 0)
+        frame.BackgroundColor3 = currentColor
+        frame.BackgroundTransparency = 0.3
+        frame.BorderSizePixel = 0
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0.5, 0)
+        spawn(function()
+            for i = 1, 30 do
+                if not ghost.Parent then return end
+                frame.BackgroundTransparency = 0.3 + (i / 30) * 0.7
+                ghost.Size = UDim2.new(0, 60 - i * 1.5, 0, 60 - i * 1.5)
+                wait(0.02)
+            end
+            ghost:Destroy()
+        end)
+    elseif trailType == "Classic" then
+        local bill = Instance.new("BillboardGui")
+        bill.Size = UDim2.new(0, 45, 0, 45)
+        bill.AlwaysOnTop = false
+        bill.StudsOffsetWorldSpace = backPos.Position
+        bill.Parent = myTrail
+        local frame = Instance.new("Frame", bill)
+        frame.Size = UDim2.new(1, 0, 1, 0)
+        frame.BackgroundColor3 = currentColor
+        frame.BackgroundTransparency = 0.5
+        frame.BorderSizePixel = 0
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(1, 0)
+        spawn(function()
+            for i = 1, 20 do
+                if not bill.Parent then return end
+                frame.BackgroundTransparency = 0.5 + (i / 20) * 0.5
+                wait(0.03)
+            end
+            bill:Destroy()
+        end)
+    else
+        local symbols = {Stars = "*", Hearts = "<3", Lightning = "!", Sparkle = "+"}
+        local bill = Instance.new("BillboardGui")
+        bill.Size = UDim2.new(0, 50, 0, 50)
+        bill.AlwaysOnTop = false
+        bill.StudsOffsetWorldSpace = backPos.Position
+        bill.Parent = myTrail
+        local lbl = Instance.new("TextLabel", bill)
+        lbl.Size = UDim2.new(1, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = symbols[trailType] or "*"
+        lbl.TextColor3 = currentColor
+        lbl.TextSize = 32
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextStrokeColor3 = currentColor
+        lbl.TextStrokeTransparency = 0.5
+        spawn(function()
+            for i = 1, 25 do
+                if not bill.Parent then return end
+                lbl.TextTransparency = i / 25
+                lbl.TextStrokeTransparency = 0.5 + (i / 25) * 0.5
+                wait(0.03)
+            end
+            bill:Destroy()
+        end)
+    end
+end
+
 RunService.Heartbeat:Connect(function(dt)
     -- Rainbow title animation
     rainbowHue = (rainbowHue + dt * 0.3) % 1
@@ -650,5 +795,6 @@ RunService.Heartbeat:Connect(function(dt)
     if updateCounter >= 3 then
         updateCounter = 0
         updateESP()
+        updateTrail()
     end
 end)
