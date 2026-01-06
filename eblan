@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local InsertService = game:GetService("InsertService")
 local player = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
@@ -15,8 +16,23 @@ local Settings = {
     HealthStyle = "Percent",
     ShowDistance = true,
     TrailEnabled = false,
-    TrailType = "Classic"
+    TrailType = "Classic",
+    TrailSize = 1.0, -- Trail size multiplier
+    ChinaHat = false,
+    ChinaHatFriends = true, -- Show ONLY on friends
+    ChinaHatSize = 1.0, -- Hat size multiplier
+    TargetESP = false,
+    Friends = {} -- Friend list
 }
+
+-- Skin presets
+local SkinPresets = {
+    {name = "Reset", id = 0},
+    {name = "Neko-Bunny", id = 6822270792},
+    {name = "Girl", id = 8208615031},
+    {name = "Guest 666", id = 15680885383},
+}
+local originalAppearance = nil
 
 -- Color presets (20 + Rainbow)
 local ColorPresets = {
@@ -45,6 +61,11 @@ local colorIdx = 1
 
 local ESPObjects = {}
 local myTrail = nil
+local chinaHats = {}
+local targetESPObj = nil
+local currentTarget = nil
+local targetRotation = 0
+local friendListOpen = false
 
 -- Rainbow hue
 local rainbowHue = 0
@@ -295,6 +316,862 @@ createSelector("Trail Type", {"Ghost", "Classic", "Stars", "Lightning", "Hearts"
     if myTrail then myTrail:Destroy() myTrail = nil end
 end, 9)
 
+-- Trail Size selector
+createSelector("Trail Size", {"Small", "Normal", "Large"}, "Normal", function(v)
+    if v == "Small" then Settings.TrailSize = 0.6
+    elseif v == "Normal" then Settings.TrailSize = 1.0
+    else Settings.TrailSize = 1.5 end
+end, 10)
+
+-- China Hat toggle
+createToggle("China Hat", false, function(v) 
+    Settings.ChinaHat = v
+    if not v then
+        for _, hat in pairs(chinaHats) do if hat then hat:Destroy() end end
+        chinaHats = {}
+    end
+end, 11)
+
+createToggle("Friends Only Hat", true, function(v) Settings.ChinaHatFriends = v end, 12)
+
+-- Hat Size selector
+createSelector("Hat Size", {"Small", "Normal", "Large"}, "Normal", function(v)
+    if v == "Small" then Settings.ChinaHatSize = 0.6
+    elseif v == "Normal" then Settings.ChinaHatSize = 1.0
+    else Settings.ChinaHatSize = 1.5 end
+    -- Recreate hats with new size
+    for _, hat in pairs(chinaHats) do if hat then hat:Destroy() end end
+    chinaHats = {}
+end, 13)
+
+-- Target ESP toggle
+createToggle("Target ESP", false, function(v) 
+    Settings.TargetESP = v
+    if not v and targetESPObj then
+        targetESPObj:Destroy()
+        targetESPObj = nil
+        currentTarget = nil
+    end
+end, 14)
+
+-- Friends List Button
+local friendsFrame = Instance.new("Frame")
+friendsFrame.Name = "FriendsBtn"
+friendsFrame.Size = UDim2.new(1, -10, 0, 45)
+friendsFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+friendsFrame.LayoutOrder = 15
+friendsFrame.Parent = scrollFrame
+Instance.new("UICorner", friendsFrame).CornerRadius = UDim.new(0, 10)
+
+local friendsLabel = Instance.new("TextLabel")
+friendsLabel.Text = "Friends"
+friendsLabel.Font = Enum.Font.Gotham
+friendsLabel.TextSize = 14
+friendsLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+friendsLabel.Size = UDim2.new(0.5, 0, 1, 0)
+friendsLabel.Position = UDim2.new(0, 12, 0, 0)
+friendsLabel.BackgroundTransparency = 1
+friendsLabel.TextXAlignment = Enum.TextXAlignment.Left
+friendsLabel.Parent = friendsFrame
+
+local friendsBtn = Instance.new("TextButton")
+friendsBtn.Text = "Open List"
+friendsBtn.Font = Enum.Font.GothamBold
+friendsBtn.TextSize = 11
+friendsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+friendsBtn.Size = UDim2.new(0, 80, 0, 30)
+friendsBtn.Position = UDim2.new(1, -90, 0.5, -15)
+friendsBtn.BackgroundColor3 = Color3.fromRGB(60, 50, 80)
+friendsBtn.Parent = friendsFrame
+Instance.new("UICorner", friendsBtn).CornerRadius = UDim.new(0, 8)
+
+-- Friends List Panel
+local friendsPanel = Instance.new("Frame")
+friendsPanel.Name = "FriendsPanel"
+friendsPanel.Size = UDim2.new(0, 220, 0, 280)
+friendsPanel.Position = UDim2.new(0.5, -110, 0.5, -140)
+friendsPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+friendsPanel.Visible = false
+friendsPanel.Parent = screenGui
+Instance.new("UICorner", friendsPanel).CornerRadius = UDim.new(0, 12)
+local fpStroke = Instance.new("UIStroke", friendsPanel)
+fpStroke.Color = Color3.fromRGB(138, 43, 226)
+fpStroke.Thickness = 2
+
+local fpTitle = Instance.new("TextLabel", friendsPanel)
+fpTitle.Text = "Friends List [drag]"
+fpTitle.Font = Enum.Font.GothamBold
+fpTitle.TextSize = 14
+fpTitle.TextColor3 = Color3.fromRGB(255, 150, 200)
+fpTitle.Size = UDim2.new(1, 0, 0, 35)
+fpTitle.BackgroundTransparency = 1
+
+local fpClose = Instance.new("TextButton", friendsPanel)
+fpClose.Text = "X"
+fpClose.Font = Enum.Font.GothamBold
+fpClose.TextSize = 14
+fpClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+fpClose.Size = UDim2.new(0, 30, 0, 30)
+fpClose.Position = UDim2.new(1, -33, 0, 3)
+fpClose.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+Instance.new("UICorner", fpClose).CornerRadius = UDim.new(0, 8)
+fpClose.MouseButton1Click:Connect(function() friendsPanel.Visible = false friendListOpen = false end)
+
+local fpScroll = Instance.new("ScrollingFrame", friendsPanel)
+fpScroll.Size = UDim2.new(1, -16, 1, -45)
+fpScroll.Position = UDim2.new(0, 8, 0, 40)
+fpScroll.BackgroundTransparency = 1
+fpScroll.ScrollBarThickness = 3
+fpScroll.ScrollBarImageColor3 = Color3.fromRGB(138, 43, 226)
+fpScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+
+local fpLayout = Instance.new("UIListLayout", fpScroll)
+fpLayout.SortOrder = Enum.SortOrder.LayoutOrder
+fpLayout.Padding = UDim.new(0, 4)
+
+-- Dragging for friends panel (fixed)
+local fpDragging, fpDragStart, fpStartPos = false, nil, nil
+
+fpTitle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        fpDragging = true
+        fpDragStart = input.Position
+        fpStartPos = friendsPanel.Position
+    end
+end)
+
+fpTitle.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        fpDragging = false
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        fpDragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if fpDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - fpDragStart
+        friendsPanel.Position = UDim2.new(fpStartPos.X.Scale, fpStartPos.X.Offset + delta.X, fpStartPos.Y.Scale, fpStartPos.Y.Offset + delta.Y)
+    end
+end)
+
+local function updateFriendsList()
+    for _, c in pairs(fpScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+    local order = 0
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= player then
+            order = order + 1
+            local isFriend = Settings.Friends[plr.Name] or false
+            
+            local pf = Instance.new("Frame")
+            pf.Size = UDim2.new(1, -6, 0, 40)
+            pf.BackgroundColor3 = isFriend and Color3.fromRGB(40, 50, 40) or Color3.fromRGB(30, 30, 38)
+            pf.LayoutOrder = order
+            pf.Parent = fpScroll
+            Instance.new("UICorner", pf).CornerRadius = UDim.new(0, 8)
+            
+            -- Avatar
+            local avatar = Instance.new("ImageLabel", pf)
+            avatar.Size = UDim2.new(0, 32, 0, 32)
+            avatar.Position = UDim2.new(0, 4, 0.5, -16)
+            avatar.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+            Instance.new("UICorner", avatar).CornerRadius = UDim.new(0, 6)
+            pcall(function()
+                avatar.Image = Players:GetUserThumbnailAsync(plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+            end)
+            
+            -- Name
+            local nm = Instance.new("TextLabel", pf)
+            nm.Text = plr.Name
+            nm.Font = Enum.Font.Gotham
+            nm.TextSize = 11
+            nm.TextColor3 = Color3.fromRGB(220, 220, 220)
+            nm.Size = UDim2.new(0, 90, 1, 0)
+            nm.Position = UDim2.new(0, 40, 0, 0)
+            nm.BackgroundTransparency = 1
+            nm.TextXAlignment = Enum.TextXAlignment.Left
+            nm.TextTruncate = Enum.TextTruncate.AtEnd
+            
+            -- Toggle button
+            local tb = Instance.new("TextButton", pf)
+            tb.Text = isFriend and "Friend" or "Add"
+            tb.Font = Enum.Font.GothamBold
+            tb.TextSize = 10
+            tb.TextColor3 = isFriend and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(200, 200, 200)
+            tb.Size = UDim2.new(0, 50, 0, 26)
+            tb.Position = UDim2.new(1, -55, 0.5, -13)
+            tb.BackgroundColor3 = isFriend and Color3.fromRGB(40, 80, 40) or Color3.fromRGB(50, 50, 60)
+            Instance.new("UICorner", tb).CornerRadius = UDim.new(0, 6)
+            
+            tb.MouseButton1Click:Connect(function()
+                Settings.Friends[plr.Name] = not Settings.Friends[plr.Name]
+                updateFriendsList()
+            end)
+        end
+    end
+    fpScroll.CanvasSize = UDim2.new(0, 0, 0, fpLayout.AbsoluteContentSize.Y + 10)
+end
+
+friendsBtn.MouseButton1Click:Connect(function()
+    friendListOpen = not friendListOpen
+    friendsPanel.Visible = friendListOpen
+    if friendListOpen then updateFriendsList() end
+end)
+
+-- ============ SKIN CHANGER ============
+local skinFrame = Instance.new("Frame")
+skinFrame.Name = "SkinChanger"
+skinFrame.Size = UDim2.new(1, -10, 0, 45)
+skinFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+skinFrame.LayoutOrder = 16
+skinFrame.Parent = scrollFrame
+Instance.new("UICorner", skinFrame).CornerRadius = UDim.new(0, 10)
+
+local skinLabel = Instance.new("TextLabel", skinFrame)
+skinLabel.Text = "Skin Changer"
+skinLabel.Font = Enum.Font.Gotham
+skinLabel.TextSize = 14
+skinLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+skinLabel.Size = UDim2.new(0.5, 0, 1, 0)
+skinLabel.Position = UDim2.new(0, 12, 0, 0)
+skinLabel.BackgroundTransparency = 1
+skinLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local skinBtn = Instance.new("TextButton", skinFrame)
+skinBtn.Text = "Open"
+skinBtn.Font = Enum.Font.GothamBold
+skinBtn.TextSize = 11
+skinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+skinBtn.Size = UDim2.new(0, 80, 0, 30)
+skinBtn.Position = UDim2.new(1, -90, 0.5, -15)
+skinBtn.BackgroundColor3 = Color3.fromRGB(80, 50, 80)
+Instance.new("UICorner", skinBtn).CornerRadius = UDim.new(0, 8)
+
+-- Skin Changer Panel
+local skinPanel = Instance.new("Frame")
+skinPanel.Name = "SkinPanel"
+skinPanel.Size = UDim2.new(0, 240, 0, 260)
+skinPanel.Position = UDim2.new(0.5, -120, 0.5, -130)
+skinPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+skinPanel.Visible = false
+skinPanel.Parent = screenGui
+Instance.new("UICorner", skinPanel).CornerRadius = UDim.new(0, 12)
+local spStroke = Instance.new("UIStroke", skinPanel)
+spStroke.Color = Color3.fromRGB(138, 43, 226)
+spStroke.Thickness = 2
+
+local spTitle = Instance.new("TextLabel", skinPanel)
+spTitle.Text = "Skin Changer [drag]"
+spTitle.Font = Enum.Font.GothamBold
+spTitle.TextSize = 14
+spTitle.TextColor3 = Color3.fromRGB(255, 150, 200)
+spTitle.Size = UDim2.new(1, 0, 0, 35)
+spTitle.BackgroundTransparency = 1
+
+local spClose = Instance.new("TextButton", skinPanel)
+spClose.Text = "X"
+spClose.Font = Enum.Font.GothamBold
+spClose.TextSize = 14
+spClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+spClose.Size = UDim2.new(0, 30, 0, 30)
+spClose.Position = UDim2.new(1, -33, 0, 3)
+spClose.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+Instance.new("UICorner", spClose).CornerRadius = UDim.new(0, 8)
+spClose.MouseButton1Click:Connect(function() skinPanel.Visible = false end)
+
+-- Skin presets (Asset IDs from Creator Hub)
+local presetY = 40
+local skinPresetButtons = {
+    {name = "Reset", assetId = 0, color = Color3.fromRGB(80, 50, 50)},
+    {name = "Neko-Bunny", assetId = 6822270792, color = Color3.fromRGB(70, 50, 80)},
+    {name = "Girl", assetId = 8208615031, color = Color3.fromRGB(80, 50, 70)},
+    {name = "Guest 666", assetId = 15680885383, color = Color3.fromRGB(50, 50, 50)},
+}
+
+-- Save original appearance on load
+local savedDescription = nil
+pcall(function()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hum = char:WaitForChild("Humanoid", 5)
+    if hum then
+        savedDescription = hum:GetAppliedDescription()
+    end
+end)
+
+-- Also save when character respawns
+player.CharacterAdded:Connect(function(char)
+    if not savedDescription then
+        pcall(function()
+            local hum = char:WaitForChild("Humanoid", 5)
+            if hum then
+                task.wait(1)
+                savedDescription = hum:GetAppliedDescription()
+            end
+        end)
+    end
+end)
+
+local function applySkinFromAsset(assetId)
+    local char = player.Character
+    if not char then return false end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return false end
+    
+    local success = false
+    
+    pcall(function()
+        -- Try multiple methods to load model (Xeno, Delta, etc)
+        local model = nil
+        
+        -- Method 1: game:GetObjects (Xeno, Synapse, etc)
+        pcall(function()
+            local objects = game:GetObjects("rbxassetid://" .. assetId)
+            if objects and #objects > 0 then
+                model = objects[1]
+            end
+        end)
+        
+        -- Method 2: InsertService (Delta, some mobile executors)
+        if not model then
+            pcall(function()
+                model = InsertService:LoadLocalAsset("rbxassetid://" .. assetId)
+            end)
+        end
+        
+        -- Method 3: InsertService LoadAsset
+        if not model then
+            pcall(function()
+                local m = InsertService:LoadAsset(assetId)
+                if m then
+                    model = m:GetChildren()[1] or m
+                end
+            end)
+        end
+        
+        if not model then return end
+        
+        -- Some models have 2 copies - find the right one (with Humanoid or most parts)
+        local actualModel = model
+        local humanoidFound = model:FindFirstChildOfClass("Humanoid")
+        
+        if not humanoidFound then
+            -- Search in children for model with Humanoid
+            for _, child in pairs(model:GetChildren()) do
+                if child:IsA("Model") then
+                    if child:FindFirstChildOfClass("Humanoid") then
+                        actualModel = child
+                        break
+                    end
+                end
+            end
+        end
+        
+        -- If still no humanoid, find model with most MeshParts
+        if not actualModel:FindFirstChildOfClass("Humanoid") then
+            local maxParts = 0
+            for _, child in pairs(model:GetChildren()) do
+                if child:IsA("Model") then
+                    local partCount = 0
+                    for _, p in pairs(child:GetDescendants()) do
+                        if p:IsA("MeshPart") or p:IsA("Accessory") then
+                            partCount = partCount + 1
+                        end
+                    end
+                    if partCount > maxParts then
+                        maxParts = partCount
+                        actualModel = child
+                    end
+                end
+            end
+        end
+        
+        model = actualModel
+        
+        -- FULL CLEAR
+        for _, child in pairs(char:GetChildren()) do
+            if child:IsA("Accessory") or child:IsA("Shirt") or child:IsA("Pants") 
+               or child:IsA("ShirtGraphic") or child:IsA("BodyColors") 
+               or child:IsA("CharacterMesh") then
+                child:Destroy()
+            end
+        end
+        
+        -- Clear face
+        local head = char:FindFirstChild("Head")
+        if head then
+            for _, f in pairs(head:GetChildren()) do
+                if f:IsA("Decal") or f:IsA("Texture") then f:Destroy() end
+            end
+        end
+        
+        -- Copy Shirt, Pants, BodyColors, CharacterMesh, Face
+        for _, item in pairs(model:GetDescendants()) do
+            pcall(function()
+                if item:IsA("Shirt") then
+                    item:Clone().Parent = char
+                    success = true
+                elseif item:IsA("Pants") then
+                    item:Clone().Parent = char
+                    success = true
+                elseif item:IsA("ShirtGraphic") then
+                    item:Clone().Parent = char
+                    success = true
+                elseif item:IsA("BodyColors") then
+                    item:Clone().Parent = char
+                    success = true
+                elseif item:IsA("CharacterMesh") then
+                    item:Clone().Parent = char
+                    success = true
+                elseif item:IsA("Decal") and item.Parent and item.Parent.Name == "Head" then
+                    if head then
+                        item:Clone().Parent = head
+                        success = true
+                    end
+                end
+            end)
+        end
+        
+        -- Function to weld MeshPart to body part
+        local function weldMeshToBody(meshPart, bodyPart)
+            local clone = meshPart:Clone()
+            clone.Anchored = false
+            clone.CanCollide = false
+            clone.CFrame = bodyPart.CFrame
+            clone.Parent = char
+            
+            local weld = Instance.new("Weld")
+            weld.Part0 = bodyPart
+            weld.Part1 = clone
+            weld.C0 = CFrame.new()
+            weld.C1 = CFrame.new()
+            weld.Parent = clone
+            
+            return clone
+        end
+        
+        -- Copy MeshParts (for custom body models like New Guest 666)
+        local bodyPartNames = {
+            "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+            "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand",
+            "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg",
+            "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot", "HumanoidRootPart"
+        }
+        
+        -- Find model's HumanoidRootPart for reference
+        local modelHRP = model:FindFirstChild("HumanoidRootPart", true)
+        local charHRP = char:FindFirstChild("HumanoidRootPart")
+        
+        if modelHRP and charHRP then
+            -- Get all MeshParts that are NOT body parts
+            for _, item in pairs(model:GetDescendants()) do
+                if item:IsA("MeshPart") or (item:IsA("Part") and item.Name ~= "HumanoidRootPart") then
+                    pcall(function()
+                        local isBodyPart = false
+                        for _, name in pairs(bodyPartNames) do
+                            if item.Name == name then
+                                isBodyPart = true
+                                break
+                            end
+                        end
+                        
+                        if not isBodyPart and item.Name ~= "Handle" then
+                            -- Find what this part is welded to in the model
+                            local weldedTo = nil
+                            for _, w in pairs(item:GetChildren()) do
+                                if w:IsA("Weld") or w:IsA("Motor6D") or w:IsA("WeldConstraint") then
+                                    if w.Part0 and w.Part0 ~= item then
+                                        weldedTo = w.Part0.Name
+                                    elseif w.Part1 and w.Part1 ~= item then
+                                        weldedTo = w.Part1.Name
+                                    end
+                                    break
+                                end
+                            end
+                            
+                            -- Also check parent for welds
+                            if not weldedTo and item.Parent then
+                                for _, w in pairs(item.Parent:GetChildren()) do
+                                    if (w:IsA("Weld") or w:IsA("Motor6D")) and (w.Part0 == item or w.Part1 == item) then
+                                        if w.Part0 == item and w.Part1 then
+                                            weldedTo = w.Part1.Name
+                                        elseif w.Part1 == item and w.Part0 then
+                                            weldedTo = w.Part0.Name
+                                        end
+                                        break
+                                    end
+                                end
+                            end
+                            
+                            -- Find target part in character
+                            local targetPart = charHRP
+                            if weldedTo then
+                                local found = char:FindFirstChild(weldedTo)
+                                if found then targetPart = found end
+                            end
+                            
+                            -- Calculate offset from model's HRP
+                            local offset = modelHRP.CFrame:ToObjectSpace(item.CFrame)
+                            
+                            local clone = item:Clone()
+                            clone.Anchored = false
+                            clone.CanCollide = false
+                            
+                            -- Remove old welds from clone
+                            for _, w in pairs(clone:GetDescendants()) do
+                                if w:IsA("Weld") or w:IsA("Motor6D") or w:IsA("WeldConstraint") then
+                                    w:Destroy()
+                                end
+                            end
+                            
+                            clone.Parent = char
+                            clone.CFrame = charHRP.CFrame * offset
+                            
+                            -- Weld to HRP (keeps position relative to character)
+                            local weld = Instance.new("Weld")
+                            weld.Part0 = charHRP
+                            weld.Part1 = clone
+                            weld.C0 = offset
+                            weld.C1 = CFrame.new()
+                            weld.Parent = clone
+                            
+                            success = true
+                        end
+                    end)
+                end
+            end
+        end
+        
+        -- Manual accessory attachment function
+        local function attachAccessory(acc)
+            local handle = acc:FindFirstChild("Handle")
+            if not handle then return false end
+            
+            -- Find attachment point
+            local accAttachment = handle:FindFirstChildOfClass("Attachment")
+            local targetPart = nil
+            local targetAttachment = nil
+            
+            if accAttachment then
+                -- Search for matching attachment in character
+                for _, part in pairs(char:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        local match = part:FindFirstChild(accAttachment.Name)
+                        if match and match:IsA("Attachment") then
+                            targetPart = part
+                            targetAttachment = match
+                            break
+                        end
+                    end
+                end
+            end
+            
+            -- Fallback: attach to head if no attachment found
+            if not targetPart then
+                targetPart = char:FindFirstChild("Head")
+            end
+            
+            if not targetPart then return false end
+            
+            -- Clone and setup
+            local clone = acc:Clone()
+            local cloneHandle = clone:FindFirstChild("Handle")
+            if not cloneHandle then return false end
+            
+            clone.Parent = char
+            cloneHandle.Anchored = false
+            cloneHandle.CanCollide = false
+            
+            -- Remove old welds
+            for _, w in pairs(cloneHandle:GetChildren()) do
+                if w:IsA("Weld") or w:IsA("WeldConstraint") or w:IsA("Motor6D") then
+                    w:Destroy()
+                end
+            end
+            
+            -- Position and weld
+            if targetAttachment then
+                local cloneAttachment = cloneHandle:FindFirstChild(targetAttachment.Name)
+                if cloneAttachment then
+                    cloneHandle.CFrame = targetPart.CFrame * targetAttachment.CFrame * cloneAttachment.CFrame:Inverse()
+                else
+                    cloneHandle.CFrame = targetPart.CFrame
+                end
+            else
+                cloneHandle.CFrame = targetPart.CFrame * CFrame.new(0, 0.5, 0)
+            end
+            
+            -- Create weld
+            local weld = Instance.new("Weld")
+            weld.Part0 = targetPart
+            weld.Part1 = cloneHandle
+            weld.C0 = targetPart.CFrame:Inverse() * cloneHandle.CFrame
+            weld.C1 = CFrame.new()
+            weld.Parent = cloneHandle
+            
+            return true
+        end
+        
+        -- Copy ALL Accessories with manual weld
+        local addedAccessories = {}
+        for _, item in pairs(model:GetDescendants()) do
+            if item:IsA("Accessory") and not addedAccessories[item.Name] then
+                pcall(function()
+                    if attachAccessory(item) then
+                        addedAccessories[item.Name] = true
+                        success = true
+                    end
+                end)
+            end
+        end
+        
+        -- Also check direct children
+        for _, item in pairs(model:GetChildren()) do
+            if item:IsA("Accessory") and not addedAccessories[item.Name] then
+                pcall(function()
+                    if attachAccessory(item) then
+                        addedAccessories[item.Name] = true
+                        success = true
+                    end
+                end)
+            end
+        end
+        
+        model:Destroy()
+    end)
+    
+    return success
+end
+
+-- Store original appearance data manually
+local originalSkinData = {
+    shirt = nil,
+    pants = nil,
+    bodyColors = nil,
+    accessories = {},
+    face = nil
+}
+
+local function saveOriginalSkin()
+    local char = player.Character
+    if not char then return end
+    
+    pcall(function()
+        local shirt = char:FindFirstChildOfClass("Shirt")
+        if shirt then originalSkinData.shirt = shirt.ShirtTemplate end
+        
+        local pants = char:FindFirstChildOfClass("Pants")
+        if pants then originalSkinData.pants = pants.PantsTemplate end
+        
+        local bc = char:FindFirstChildOfClass("BodyColors")
+        if bc then
+            originalSkinData.bodyColors = {
+                HeadColor3 = bc.HeadColor3,
+                LeftArmColor3 = bc.LeftArmColor3,
+                LeftLegColor3 = bc.LeftLegColor3,
+                RightArmColor3 = bc.RightArmColor3,
+                RightLegColor3 = bc.RightLegColor3,
+                TorsoColor3 = bc.TorsoColor3
+            }
+        end
+        
+        originalSkinData.accessories = {}
+        for _, acc in pairs(char:GetChildren()) do
+            if acc:IsA("Accessory") then
+                table.insert(originalSkinData.accessories, acc:Clone())
+            end
+        end
+        
+        local head = char:FindFirstChild("Head")
+        if head then
+            local face = head:FindFirstChildOfClass("Decal")
+            if face then originalSkinData.face = face.Texture end
+        end
+    end)
+end
+
+-- Save on load
+task.spawn(function()
+    local char = player.Character or player.CharacterAdded:Wait()
+    task.wait(1)
+    saveOriginalSkin()
+end)
+
+local function resetSkin()
+    local char = player.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    
+    -- Method 1: Try ApplyDescription
+    local descSuccess = false
+    if savedDescription then
+        descSuccess = pcall(function()
+            hum:ApplyDescription(savedDescription)
+        end)
+    end
+    
+    if not descSuccess then
+        pcall(function()
+            local desc = Players:GetHumanoidDescriptionFromUserId(player.UserId)
+            if desc then
+                descSuccess = pcall(function()
+                    hum:ApplyDescription(desc)
+                end)
+            end
+        end)
+    end
+    
+    -- Method 2: Manual restore if ApplyDescription failed
+    if not descSuccess then
+        pcall(function()
+            -- Remove current accessories
+            for _, child in pairs(char:GetChildren()) do
+                if child:IsA("Accessory") then child:Destroy() end
+            end
+            
+            -- Restore shirt
+            if originalSkinData.shirt then
+                local old = char:FindFirstChildOfClass("Shirt")
+                if old then old:Destroy() end
+                local newShirt = Instance.new("Shirt")
+                newShirt.ShirtTemplate = originalSkinData.shirt
+                newShirt.Parent = char
+            end
+            
+            -- Restore pants
+            if originalSkinData.pants then
+                local old = char:FindFirstChildOfClass("Pants")
+                if old then old:Destroy() end
+                local newPants = Instance.new("Pants")
+                newPants.PantsTemplate = originalSkinData.pants
+                newPants.Parent = char
+            end
+            
+            -- Restore body colors
+            if originalSkinData.bodyColors then
+                local old = char:FindFirstChildOfClass("BodyColors")
+                if old then old:Destroy() end
+                local bc = Instance.new("BodyColors")
+                bc.HeadColor3 = originalSkinData.bodyColors.HeadColor3
+                bc.LeftArmColor3 = originalSkinData.bodyColors.LeftArmColor3
+                bc.LeftLegColor3 = originalSkinData.bodyColors.LeftLegColor3
+                bc.RightArmColor3 = originalSkinData.bodyColors.RightArmColor3
+                bc.RightLegColor3 = originalSkinData.bodyColors.RightLegColor3
+                bc.TorsoColor3 = originalSkinData.bodyColors.TorsoColor3
+                bc.Parent = char
+            end
+            
+            -- Restore accessories
+            for _, acc in pairs(originalSkinData.accessories) do
+                if acc then acc:Clone().Parent = char end
+            end
+            
+            -- Restore face
+            if originalSkinData.face then
+                local head = char:FindFirstChild("Head")
+                if head then
+                    for _, f in pairs(head:GetChildren()) do
+                        if f:IsA("Decal") then f:Destroy() end
+                    end
+                    local face = Instance.new("Decal")
+                    face.Name = "face"
+                    face.Texture = originalSkinData.face
+                    face.Parent = head
+                end
+            end
+        end)
+    end
+end
+
+for i, preset in ipairs(skinPresetButtons) do
+    local btn = Instance.new("TextButton", skinPanel)
+    btn.Text = preset.name
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Size = UDim2.new(1, -20, 0, 32)
+    btn.Position = UDim2.new(0, 10, 0, presetY)
+    btn.BackgroundColor3 = preset.color
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    presetY = presetY + 38
+    
+    btn.MouseButton1Click:Connect(function()
+        if preset.assetId == 0 then
+            resetSkin()
+        else
+            applySkinFromAsset(preset.assetId)
+        end
+    end)
+end
+
+-- Custom Asset ID input
+local customLabel = Instance.new("TextLabel", skinPanel)
+customLabel.Text = "Asset ID:"
+customLabel.Font = Enum.Font.Gotham
+customLabel.TextSize = 11
+customLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+customLabel.Size = UDim2.new(0.35, 0, 0, 25)
+customLabel.Position = UDim2.new(0, 10, 0, presetY + 5)
+customLabel.BackgroundTransparency = 1
+customLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local customBox = Instance.new("TextBox", skinPanel)
+customBox.PlaceholderText = "Asset ID..."
+customBox.Text = ""
+customBox.Font = Enum.Font.Gotham
+customBox.TextSize = 11
+customBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+customBox.Size = UDim2.new(0.6, 0, 0, 28)
+customBox.Position = UDim2.new(0.35, 5, 0, presetY + 3)
+customBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+Instance.new("UICorner", customBox).CornerRadius = UDim.new(0, 6)
+
+local applyBtn = Instance.new("TextButton", skinPanel)
+applyBtn.Text = "Apply Skin"
+applyBtn.Font = Enum.Font.GothamBold
+applyBtn.TextSize = 12
+applyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+applyBtn.Size = UDim2.new(1, -20, 0, 32)
+applyBtn.Position = UDim2.new(0, 10, 0, presetY + 38)
+applyBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 60)
+Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 8)
+
+applyBtn.MouseButton1Click:Connect(function()
+    local id = tonumber(customBox.Text)
+    if id then
+        applySkinFromAsset(id)
+    end
+end)
+
+-- Dragging for skin panel
+local spDragging, spDragStart, spStartPos = false, nil, nil
+spTitle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        spDragging = true
+        spDragStart = input.Position
+        spStartPos = skinPanel.Position
+    end
+end)
+spTitle.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        spDragging = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if spDragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - spDragStart
+        skinPanel.Position = UDim2.new(spStartPos.X.Scale, spStartPos.X.Offset + delta.X, spStartPos.Y.Scale, spStartPos.Y.Offset + delta.Y)
+    end
+end)
+
+skinBtn.MouseButton1Click:Connect(function()
+    skinPanel.Visible = not skinPanel.Visible
+end)
+
 -- Update canvas size
 scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
 listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -461,6 +1338,145 @@ local function removeESP(plr)
         local box3d = plr.Character:FindFirstChild("Ratmir3DBox")
         if box then box:Destroy() end
         if box3d then box3d:Destroy() end
+    end
+    -- Clean up china hat
+    if chinaHats[plr] then
+        chinaHats[plr]:Destroy()
+        chinaHats[plr] = nil
+    end
+end
+
+-- China Hat function (3D cone object)
+local function updateChinaHats()
+    if not Settings.ChinaHat then 
+        for _, hat in pairs(chinaHats) do if hat then hat:Destroy() end end
+        chinaHats = {}
+        return 
+    end
+    local currentColor = Settings.Rainbow and Color3.fromHSV(rainbowHue, 1, 1) or Settings.Color
+    local size = Settings.ChinaHatSize
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        local showHat = false
+        
+        if plr == player then
+            -- Always show on local player
+            showHat = true
+        else
+            local isFriend = Settings.Friends[plr.Name]
+            -- Show hat ONLY on friends if ChinaHatFriends is true
+            showHat = (not Settings.ChinaHatFriends) or isFriend
+        end
+        
+        local char = plr.Character
+        local head = char and char:FindFirstChild("Head")
+        
+        if showHat and head then
+            if not chinaHats[plr] or not chinaHats[plr].Parent then
+                -- Create 3D cone china hat (wide and flat like real chinese hat)
+                local cone = Instance.new("ConeHandleAdornment")
+                cone.Name = "ChinaHat"
+                cone.Adornee = head
+                cone.Height = 1.1 * size  -- Taller
+                cone.Radius = 2.2 * size  -- Wide radius
+                -- Rotate +90 degrees on X axis so cone points UP (tip on top)
+                cone.CFrame = CFrame.new(0, 0.6 * size, 0) * CFrame.Angles(math.rad(90), 0, 0)
+                cone.Color3 = currentColor
+                cone.Transparency = 0.2
+                cone.AlwaysOnTop = true
+                cone.ZIndex = 5
+                cone.Parent = head
+                
+                chinaHats[plr] = cone
+            else
+                -- Update color
+                chinaHats[plr].Color3 = currentColor
+            end
+        elseif chinaHats[plr] then
+            chinaHats[plr]:Destroy()
+            chinaHats[plr] = nil
+        end
+    end
+end
+
+-- Target ESP function (60m range, bigger size)
+local function updateTargetESP()
+    if not Settings.TargetESP then 
+        if targetESPObj then targetESPObj:Destroy() targetESPObj = nil end
+        currentTarget = nil
+        return 
+    end
+    local currentColor = Settings.Rainbow and Color3.fromHSV(rainbowHue, 1, 1) or Settings.Color
+    
+    -- Get my position
+    local myChar = player.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return end
+    
+    -- Find lowest HP player within 60 meters
+    local lowestHP = math.huge
+    local target = nil
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= player then
+            local char = plr.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 then
+                local dist = (hrp.Position - myHRP.Position).Magnitude
+                if dist <= 60 and hum.Health < lowestHP then
+                    lowestHP = hum.Health
+                    target = plr
+                end
+            end
+        end
+    end
+    
+    if not target then
+        if targetESPObj then targetESPObj:Destroy() targetESPObj = nil end
+        currentTarget = nil
+        return
+    end
+    
+    if target ~= currentTarget then
+        if targetESPObj then targetESPObj:Destroy() end
+        targetESPObj = nil
+        currentTarget = target
+    end
+    
+    local char = target.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    -- Create or update target ESP (bigger size)
+    if not targetESPObj or not targetESPObj.Parent then
+        targetESPObj = Instance.new("BillboardGui")
+        targetESPObj.Name = "TargetESP"
+        targetESPObj.Size = UDim2.new(0, 120, 0, 120)
+        targetESPObj.StudsOffset = Vector3.new(0, 0, 0)
+        targetESPObj.AlwaysOnTop = true
+        targetESPObj.Parent = hrp
+        
+        local img = Instance.new("ImageLabel", targetESPObj)
+        img.Name = "TargetImg"
+        img.Size = UDim2.new(1, 0, 1, 0)
+        img.BackgroundTransparency = 1
+        img.Image = "rbxassetid://83694856798366"
+        img.ImageColor3 = currentColor
+    end
+    
+    if targetESPObj.Parent ~= hrp then
+        targetESPObj.Parent = hrp
+    end
+    
+    -- Smooth rotation
+    targetRotation = targetRotation + 1.5
+    if targetRotation >= 360 then targetRotation = 0 end
+    
+    local img = targetESPObj:FindFirstChild("TargetImg")
+    if img then
+        img.Rotation = targetRotation
+        img.ImageColor3 = currentColor
     end
 end
 
@@ -701,6 +1717,7 @@ local function updateTrail()
     local torso = char and (char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"))
     if not Settings.TrailEnabled or not hrp or not torso then return end
     local currentColor = Settings.Rainbow and Color3.fromHSV(rainbowHue, 1, 1) or Settings.Color
+    local size = Settings.TrailSize
     if not myTrail or not myTrail.Parent then
         myTrail = Instance.new("Folder")
         myTrail.Name = "VisualTrail"
@@ -710,8 +1727,9 @@ local function updateTrail()
     local backPos = torso.CFrame * CFrame.new(0, 0, 1)
     
     if trailType == "Ghost" then
+        local baseSize = 60 * size
         local ghost = Instance.new("BillboardGui")
-        ghost.Size = UDim2.new(0, 60, 0, 60)
+        ghost.Size = UDim2.new(0, baseSize, 0, baseSize)
         ghost.AlwaysOnTop = false
         ghost.StudsOffsetWorldSpace = backPos.Position
         ghost.Parent = myTrail
@@ -725,14 +1743,16 @@ local function updateTrail()
             for i = 1, 30 do
                 if not ghost.Parent then return end
                 frame.BackgroundTransparency = 0.3 + (i / 30) * 0.7
-                ghost.Size = UDim2.new(0, 60 - i * 1.5, 0, 60 - i * 1.5)
+                local newSize = baseSize - i * (1.5 * size)
+                ghost.Size = UDim2.new(0, math.max(newSize, 5), 0, math.max(newSize, 5))
                 wait(0.02)
             end
             ghost:Destroy()
         end)
     elseif trailType == "Classic" then
+        local baseSize = 45 * size
         local bill = Instance.new("BillboardGui")
-        bill.Size = UDim2.new(0, 45, 0, 45)
+        bill.Size = UDim2.new(0, baseSize, 0, baseSize)
         bill.AlwaysOnTop = false
         bill.StudsOffsetWorldSpace = backPos.Position
         bill.Parent = myTrail
@@ -752,8 +1772,10 @@ local function updateTrail()
         end)
     else
         local symbols = {Stars = "*", Hearts = "<3", Lightning = "!", Sparkle = "+"}
+        local baseSize = 50 * size
+        local textSize = 32 * size
         local bill = Instance.new("BillboardGui")
-        bill.Size = UDim2.new(0, 50, 0, 50)
+        bill.Size = UDim2.new(0, baseSize, 0, baseSize)
         bill.AlwaysOnTop = false
         bill.StudsOffsetWorldSpace = backPos.Position
         bill.Parent = myTrail
@@ -762,7 +1784,7 @@ local function updateTrail()
         lbl.BackgroundTransparency = 1
         lbl.Text = symbols[trailType] or "*"
         lbl.TextColor3 = currentColor
-        lbl.TextSize = 32
+        lbl.TextSize = textSize
         lbl.Font = Enum.Font.GothamBold
         lbl.TextStrokeColor3 = currentColor
         lbl.TextStrokeTransparency = 0.5
@@ -784,6 +1806,7 @@ RunService.Heartbeat:Connect(function(dt)
     titleLabel.TextColor3 = Color3.fromHSV(rainbowHue, 0.8, 1)
     mainStroke.Color = Color3.fromHSV(rainbowHue, 0.7, 0.9)
     miniStroke.Color = Color3.fromHSV(rainbowHue, 0.7, 0.9)
+    fpStroke.Color = Color3.fromHSV(rainbowHue, 0.7, 0.9)
     
     -- Update color preview if rainbow
     if Settings.Rainbow then
@@ -796,5 +1819,7 @@ RunService.Heartbeat:Connect(function(dt)
         updateCounter = 0
         updateESP()
         updateTrail()
+        updateChinaHats()
+        updateTargetESP()
     end
 end)
